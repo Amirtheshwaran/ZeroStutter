@@ -23,3 +23,16 @@ jobs:
       - name: Validate in PowerShell 7
         shell: pwsh
         run: .\tests\Validate-Project.ps1
+
+      - name: Build portable package
+        shell: pwsh
+        run: .\Build-Package.ps1
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZeroStutter-Windows
+          path: |
+            dist/ZeroStutter.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error

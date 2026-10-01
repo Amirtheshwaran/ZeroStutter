@@ -4,11 +4,50 @@ param(
     [switch]$Once,
     [switch]$ApplyProfilePriorities,
     [ValidateRange(1, 60)][int]$RefreshSeconds = 2,
-    [string]$ProfilePath = ''
+    [string]$ProfilePath = '',
+    [string]$Game,
+    [ValidateRange(1, 2147483647)][int]$TargetProcessId,
+    [ValidateSet('Observe', 'AboveNormal')][string]$Priority = 'AboveNormal',
+    [ValidateSet('Default', 'Performance')][string]$CpuPolicy = 'Default',
+    [switch]$DisableHighQoS,
+    [switch]$UnparkCores,
+    [switch]$Headless,
+    [ValidateRange(0, 86400)][int]$Seconds = 0,
+    [switch]$Topology,
+    [switch]$Recover,
+    [switch]$RecoverPower,
+    [string]$StateDirectory = (Join-Path $env:LOCALAPPDATA 'ZeroStutter\State'),
+    [string]$ReportPath
 )
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($ProfilePath)) { $ProfilePath = Join-Path $PSScriptRoot 'profiles.json' }
 if ($env:OS -ne 'Windows_NT') { throw 'ZeroStutter supports Windows 10 and Windows 11 only.' }
+$sessionRequested = $Game -or $TargetProcessId
+$selectedModes = @($sessionRequested, [bool]$Topology, ([bool]$Recover -or [bool]$RecoverPower)) | Where-Object { $_ }
+if (@($selectedModes).Count -gt 1) { throw 'Choose one mode: a game session, -Topology, or -Recover.' }
+if (($sessionRequested -or $Topology -or $Recover -or $RecoverPower) -and ($Once -or $ApplyProfilePriorities)) {
+    throw 'Monitor switches cannot be combined with game, topology, or recovery modes.'
+}
+if ($Game -and $TargetProcessId) { throw 'Select either -Game or -TargetProcessId.' }
+if ($Topology) {
+    Import-Module (Join-Path $PSScriptRoot 'src\ZeroStutter.Tuning.psm1') -Force
+    Get-ZeroStutterCpuTopology
+    return
+}
+if ($Recover -or $RecoverPower) {
+    & (Join-Path $PSScriptRoot 'Restore-ZeroStutterSession.ps1') -StateDirectory $StateDirectory
+    return
+}
+if ($sessionRequested) {
+    $sessionArguments = @{ Priority = $Priority; CpuPolicy = $CpuPolicy; DisableHighQoS = $DisableHighQoS; UnparkCores = $UnparkCores; Headless = $Headless; Seconds = $Seconds; StateDirectory = $StateDirectory }
+    if ($Game) { $sessionArguments.Game = $Game } else { $sessionArguments.ProcessId = $TargetProcessId }
+    if ($ReportPath) { $sessionArguments.ReportPath = $ReportPath }
+    & (Join-Path $PSScriptRoot 'Start-ZeroStutterSession.ps1') @sessionArguments
+    return
+}
+foreach ($sessionOnly in @('Priority', 'CpuPolicy', 'DisableHighQoS', 'UnparkCores', 'Headless', 'Seconds', 'ReportPath')) {
+    if ($PSBoundParameters.ContainsKey($sessionOnly)) { throw "-$sessionOnly requires -Game or -TargetProcessId." }
+}
 if ($Once -and $ApplyProfilePriorities) {
     throw '-Once is read-only and cannot be combined with -ApplyProfilePriorities.'
 }
@@ -88,9 +127,9 @@ function Show-Dashboard {
     param([object[]]$Targets)
     Clear-Host
     Write-Host '============================================================================' -ForegroundColor Cyan
-    Write-Host '  ZeroStutter | Process and CPU monitor' -ForegroundColor Yellow
+    Write-Host '  ZeroStutter | Frame pacing toolkit' -ForegroundColor Yellow
     Write-Host '============================================================================' -ForegroundColor Cyan
-    Write-Host '  Read-only by default. No timer, memory, affinity, registry, or power-plan changes.' -ForegroundColor DarkGray
+    Write-Host '  Monitor mode. Start a tuning session: .\ZeroStutter.ps1 -Game cs2' -ForegroundColor DarkGray
     $memory = Get-MemorySnapshot
     if ($null -ne $memory.FreeGb) {
         Write-Host ("  Free RAM (Windows WMI): {0} GB of {1} GB" -f $memory.FreeGb, $memory.TotalGb)
@@ -136,6 +175,8 @@ try {
         $targets = Get-CurrentTargets
         Update-Targets -Targets $targets
         Show-Dashboard -Targets $targets
+        Dispose-UnmanagedTargets -Targets $targets
+        $targets = @()
         try {
             if ([Console]::KeyAvailable -and [Console]::ReadKey($true).Key -eq [ConsoleKey]::Q) { break }
         } catch {

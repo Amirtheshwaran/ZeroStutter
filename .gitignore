@@ -11,3 +11,7 @@ $RECYCLE.BIN/
 
 # Shortcuts
 *.lnk
+
+# Generated local captures and release packages
+dist/
+captures/

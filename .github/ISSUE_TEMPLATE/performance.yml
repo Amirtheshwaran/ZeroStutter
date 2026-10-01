@@ -1,0 +1,32 @@
+name: Share a frame-pacing result
+description: Report a reproducible improvement, regression, or unchanged result.
+title: "[Performance] "
+body:
+  - type: textarea
+    id: setup
+    attributes:
+      label: Game and system
+      description: Include game/version, CPU, GPU, RAM, Windows build, graphics settings, frame cap, and frame generation.
+    validations:
+      required: true
+  - type: textarea
+    id: configuration
+    attributes:
+      label: ZeroStutter version and command
+      description: Include the commit/version and exact session options. Include any error or cleanup message.
+    validations:
+      required: true
+  - type: textarea
+    id: procedure
+    attributes:
+      label: Repeatable test scene and run order
+      description: Describe the warmup, duration, background workload, and baseline/tuned order. Three runs per configuration are preferred.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Results and captures
+      description: Include p99/p99.9, slow-frame rate, metric column, and exclusions for each run. Attach reports or captures after inspecting application names and paths for privacy. Unchanged results and regressions are useful too.
+    validations:
+      required: true

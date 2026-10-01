@@ -1,12 +1,8 @@
-# Dependency-free, read-only checks for ZeroStutter.
+# Dependency-free checks; process changes affect only temporary test children.
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$scriptPaths = @(
-    (Join-Path $repoRoot 'ZeroStutter.ps1'),
-    (Join-Path $repoRoot 'install.ps1'),
-    (Join-Path $repoRoot 'uninstall.ps1'),
-    (Join-Path $repoRoot 'src\ZeroStutter.Core.psm1')
-)
+$scriptPaths = @(Get-ChildItem -LiteralPath $repoRoot -File -Filter '*.ps1' | Select-Object -ExpandProperty FullName)
+$scriptPaths += @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src') -File -Filter '*.psm1' | Select-Object -ExpandProperty FullName)
 foreach ($path in $scriptPaths) {
     $tokens = $null
     $errors = $null
@@ -66,6 +62,14 @@ $restoreResults = @(Restore-ZeroStutterPriorities -ManagedProcesses $managed)
 if ([string]$testProcess.PriorityClass -ne 'Normal' -or $managed.Count -ne 0 -or $restoreResults.Count -ne 1) {
     throw 'Priority restoration failed.'
 }
+$testProcess.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal
+$expectedPriority = @{}
+$expectedPriority[('{0}:{1}' -f $testProcess.Id, $testProcess.StartTime.ToUniversalTime().Ticks)] = 'Normal'
+$null = Set-ZeroStutterProfilePriorities -Targets $targets -ManagedProcesses $managed -ExpectedPriorities $expectedPriority
+if ($managed.Count -ne 0 -or $testProcess.PriorityClass -ne [System.Diagnostics.ProcessPriorityClass]::BelowNormal -or $targets[0].Status -ne 'Changed during setup') {
+    throw 'A stale priority snapshot did not preserve an external setup-time change.'
+}
+$testProcess.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Normal
 
 $observeProfile = [pscustomobject]@{
     name = 'Observed Game'; executable = 'observe.exe'; category = 'Test'; priorityClass = 'Observe'
@@ -279,4 +283,8 @@ try {
 Remove-Module ZeroStutter.Core -ErrorAction SilentlyContinue
 & (Join-Path $repoRoot 'ZeroStutter.ps1') -Once | Out-Null
 if (-not $?) { throw 'Read-only -Once scan failed.' }
-Write-Host "All ZeroStutter checks passed. Parsed $($scriptPaths.Count) PowerShell files and validated $($profiles.Count) profiles."
+Write-Host "Core checks passed. Parsed $($scriptPaths.Count) PowerShell files and validated $($profiles.Count) profiles."
+foreach ($suite in @('Test-Tuning.ps1', 'Test-Power.ps1', 'Test-Measurement.ps1', 'Test-Session.ps1')) {
+    & (Join-Path $PSScriptRoot $suite)
+}
+Write-Host 'All ZeroStutter validation suites passed.'

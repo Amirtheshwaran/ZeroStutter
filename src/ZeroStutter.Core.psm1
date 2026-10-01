@@ -113,7 +113,8 @@ function Set-ZeroStutterProfilePriorities {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Targets,
-        [Parameter(Mandatory)][hashtable]$ManagedProcesses
+        [Parameter(Mandatory)][hashtable]$ManagedProcesses,
+        [hashtable]$ExpectedPriorities = @{}
     )
     $actions = @()
     foreach ($target in $Targets) {
@@ -133,6 +134,10 @@ function Set-ZeroStutterProfilePriorities {
             }
             if ($process -is [System.Diagnostics.Process]) { $process.Refresh() }
             $currentPriority = [System.Diagnostics.ProcessPriorityClass]$process.PriorityClass
+            if ($ExpectedPriorities.ContainsKey($identity) -and [string]$currentPriority -ne [string]$ExpectedPriorities[$identity]) {
+                $target.Status = 'Changed during setup'
+                continue
+            }
             $desiredPriority = [System.Enum]::Parse([System.Diagnostics.ProcessPriorityClass], $configuredPriority, $true)
             if ($currentPriority -eq $desiredPriority) {
                 $target.Status = 'Already set'
