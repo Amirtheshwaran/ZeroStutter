@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "profiles": [
+    { "name": "Counter-Strike 2", "executable": "cs2.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "VALORANT", "executable": "VALORANT-Win64-Shipping.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Apex Legends", "executable": "r5apex.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Fortnite", "executable": "FortniteClient-Win64-Shipping.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Call of Duty", "executable": "cod.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Overwatch 2", "executable": "Overwatch.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Rainbow Six Siege", "executable": "RainbowSix.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Cyberpunk 2077", "executable": "Cyberpunk2077.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Elden Ring", "executable": "eldenring.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Black Myth: Wukong", "executable": "b1-Win64-Shipping.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Starfield", "executable": "Starfield.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Rust", "executable": "RustClient.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "League of Legends", "executable": "League of Legends.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Dota 2", "executable": "dota2.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Grand Theft Auto V", "executable": "GTA5.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Rocket League", "executable": "RocketLeague.exe", "category": "Game", "priorityClass": "Observe" },
+    { "name": "Rust Compiler", "executable": "rustc.exe", "category": "Developer tool", "priorityClass": "Observe" },
+    { "name": "Node.js", "executable": "node.exe", "category": "Developer tool", "priorityClass": "Observe" },
+    { "name": "MSVC Compiler", "executable": "cl.exe", "category": "Developer tool", "priorityClass": "Observe" }
+  ]
+}

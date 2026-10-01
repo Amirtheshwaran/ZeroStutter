@@ -1,0 +1,13 @@
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Logs & Temp
+*.log
+*.tmp
+*.bak
+
+# Shortcuts
+*.lnk

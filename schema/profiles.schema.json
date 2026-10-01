@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Amirtheshwaran/ZeroStutter/blob/main/schema/profiles.schema.json",
+  "title": "ZeroStutter process profiles",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "profiles"],
+  "properties": {
+    "version": { "const": 1 },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "executable", "category", "priorityClass"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "executable": { "type": "string", "pattern": "^[^/\\\\\\\\]+[.]exe$" },
+          "category": { "type": "string", "minLength": 1 },
+          "priorityClass": { "enum": ["Observe", "AboveNormal"] }
+        }
+      }
+    }
+  }
+}
