@@ -1,5 +1,5 @@
 # Install ZeroStutter from a local checkout. No network download or elevation is needed.
-# Usage: powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File .\install.ps1
+# Usage: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 
 [CmdletBinding()]
 param([switch]$SkipShortcut)
@@ -64,7 +64,7 @@ if (-not $SkipShortcut) {
         $shell = New-Object -ComObject WScript.Shell
         $shortcut = $shell.CreateShortcut($shortcutPath)
         $shortcut.TargetPath = 'powershell.exe'
-        $shortcut.Arguments = '-NoProfile -ExecutionPolicy RemoteSigned -File "' + (Join-Path $installDir 'ZeroStutter.ps1') + '"'
+        $shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $installDir 'ZeroStutter.ps1') + '"'
         $shortcut.WorkingDirectory = $installDir
         $shortcut.Description = 'ZeroStutter Windows process monitor'
         $shortcut.Save()

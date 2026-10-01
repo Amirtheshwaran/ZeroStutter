@@ -1,5 +1,5 @@
 # Remove only the files installed by ZeroStutter.
-# Usage: powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File .\uninstall.ps1
+# Usage: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1
 
 [CmdletBinding()]
 param([switch]$SkipShortcut)

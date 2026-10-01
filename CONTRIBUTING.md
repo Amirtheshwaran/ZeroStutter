@@ -4,7 +4,9 @@ Thanks for considering a contribution. Keep behavior conservative and documented
 
 ## Before submitting
 
-- Run `pwsh -NoProfile -File .\tests\Validate-Project.ps1`.
+- Run the validation script in each shell you have installed:
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Validate-Project.ps1`
+  - `pwsh.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Validate-Project.ps1`
 - Keep profile entries observation-only unless you have a measured reason and document how to test the setting safely.
 - Do not add memory purges, undocumented timer tweaks, guessed CPU masks, or persistent power-plan changes.
 - Do not claim FPS, latency, or stability improvements without reproducible measurements and the full test setup.

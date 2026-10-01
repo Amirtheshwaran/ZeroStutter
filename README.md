@@ -28,16 +28,18 @@ The operating system already manages memory caching, timer resolution, and CPU s
 
 ## Run from a checkout
 
-Download or clone the repository, inspect the files, then open PowerShell in the project folder:
+Download or clone the repository, inspect the files, then open PowerShell in the project folder. On Windows PowerShell 5.1, run:
 
 ```powershell
-.\ZeroStutter.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ZeroStutter.ps1
 ```
+
+If PowerShell 7 is installed, replace `powershell.exe` with `pwsh.exe`. The execution-policy option applies only to the launched PowerShell process; it does not save a policy change. A policy enforced by Group Policy can still take precedence. See Microsoft's [execution policy documentation](https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_execution_policies).
 
 Press `Q` to quit. To run a read-only, one-time scan:
 
 ```powershell
-.\ZeroStutter.ps1 -Once
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ZeroStutter.ps1 -Once
 ```
 
 The scan reports matching processes and exits without changing their settings.
@@ -50,7 +52,7 @@ All included profiles are `Observe` only. To try a temporary priority adjustment
 2. Start ZeroStutter with the explicit opt-in:
 
 ```powershell
-.\ZeroStutter.ps1 -ApplyProfilePriorities
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ZeroStutter.ps1 -ApplyProfilePriorities
 ```
 
 3. Quit with `Q` or Ctrl+C. ZeroStutter restores each process's original priority if it is still running and still has the value ZeroStutter set.
@@ -62,13 +64,13 @@ This is an experiment, not a performance guarantee. Avoid using it with software
 The installer copies the checked-out files to `%LOCALAPPDATA%\ZeroStutter` and creates a desktop shortcut. A valid existing `profiles.json` is preserved; if an older or invalid file needs replacement, the installer saves a timestamped backup first. It does not download or execute code from the internet, elevate privileges, edit PATH, or start the monitor automatically.
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File .\install.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 To remove the files installed by this script:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File "$env:LOCALAPPDATA\ZeroStutter\uninstall.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\ZeroStutter\uninstall.ps1"
 ```
 
 You can also run the project directly from the checkout and skip installation.
@@ -103,11 +105,13 @@ The profile schema is in `schema/profiles.schema.json`.
 
 ## Validation
 
-Run the dependency-free checks from the repository root:
+Run the dependency-free checks from the repository root in Windows PowerShell 5.1:
 
 ```powershell
-pwsh -NoProfile -File .\tests\Validate-Project.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Validate-Project.ps1
 ```
+
+If PowerShell 7 is installed, replace `powershell.exe` with `pwsh.exe`.
 
 The checks parse the PowerShell files, validate profiles against the schema, exercise process matching and priority restoration, and test install, profile-preservation, backup, and uninstall behavior in a temporary directory. They do not modify live process settings.
 

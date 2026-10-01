@@ -25,7 +25,9 @@ if ($profiles.Count -ne @($profilesDocument.profiles).Count) { throw 'Unexpected
 
 $noTargets = @(Get-ZeroStutterTargetProcesses -Profiles $profiles -Processes @())
 $noActions = @(Set-ZeroStutterProfilePriorities -Targets $noTargets -ManagedProcesses @{})
-if ($noTargets.Count -ne 0 -or $noActions.Count -ne 0) { throw 'Empty process scans should be harmless.' }$testProfile = [pscustomobject]@{
+if ($noTargets.Count -ne 0 -or $noActions.Count -ne 0) { throw 'Empty process scans should be harmless.' }
+
+$testProfile = [pscustomobject]@{
     name = 'Test Game'; executable = 'testgame.exe'; category = 'Test'; priorityClass = 'AboveNormal'
 }
 $testProcess = [pscustomobject]@{
