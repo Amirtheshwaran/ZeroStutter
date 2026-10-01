@@ -34,11 +34,24 @@ $testProcess = [pscustomobject]@{
     Id = 42001
     ProcessName = 'TestGame'
     PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Normal
+    CPU = 10.0
+    WorkingSet64 = 12582912
     StartTime = (Get-Date).AddMinutes(-1)
     HasExited = $false
 }
 $targets = @(Get-ZeroStutterTargetProcesses -Profiles @($testProfile) -Processes @($testProcess))
 if ($targets.Count -ne 1 -or $targets[0].ProcessId -ne 42001) { throw 'Case-insensitive matching failed.' }
+$cpuSamples = @{}
+$sampleTime = [DateTime]::UtcNow
+Update-ZeroStutterTargetUsage -Targets $targets -CpuSamples $cpuSamples -LogicalProcessorCount 4 -SampleTime $sampleTime
+if ($targets[0].CpuPercent -ne 'n/a' -or $targets[0].WorkingSetMB -ne 12 -or $cpuSamples.Count -ne 1) {
+    throw 'First process usage sample was not initialized correctly.'
+}
+$testProcess.CPU = 11.0
+Update-ZeroStutterTargetUsage -Targets $targets -CpuSamples $cpuSamples -LogicalProcessorCount 4 -SampleTime $sampleTime.AddSeconds(1)
+if ([double]$targets[0].CpuPercent -ne 25) { throw 'CPU usage sampling did not normalize against logical processors.' }
+Update-ZeroStutterTargetUsage -Targets @() -CpuSamples $cpuSamples -LogicalProcessorCount 4 -SampleTime $sampleTime.AddSeconds(2)
+if ($cpuSamples.Count -ne 0) { throw 'Exited targets left stale CPU samples behind.' }
 
 $managed = @{}
 $actions = @(Set-ZeroStutterProfilePriorities -Targets $targets -ManagedProcesses $managed)
@@ -67,6 +80,24 @@ $observeProcess = [pscustomobject]@{
 $observeTargets = @(Get-ZeroStutterTargetProcesses -Profiles @($observeProfile) -Processes @($observeProcess))
 $null = Set-ZeroStutterProfilePriorities -Targets $observeTargets -ManagedProcesses $managed
 if ([string]$observeProcess.PriorityClass -ne 'Normal' -or $managed.Count -ne 0) { throw 'Observe-only profile changed a process.' }
+
+$backgroundProfile = [pscustomobject]@{
+    name = 'Background task'; executable = 'background.exe'; category = 'Test'; priorityClass = 'BelowNormal'
+}
+$backgroundProcess = [pscustomobject]@{
+    Id = 42006; ProcessName = 'background'; PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Normal
+    StartTime = (Get-Date).AddMinutes(-1); HasExited = $false
+}
+$backgroundTarget = @(Get-ZeroStutterTargetProcesses -Profiles @($backgroundProfile) -Processes @($backgroundProcess))
+$null = Set-ZeroStutterProfilePriorities -Targets $backgroundTarget -ManagedProcesses $managed
+if ([string]$backgroundProcess.PriorityClass -ne 'BelowNormal' -or
+    $backgroundTarget[0].PriorityClass -ne 'BelowNormal' -or $managed.Count -ne 1) {
+    throw 'Opt-in background priority reduction failed.'
+}
+$null = Restore-ZeroStutterPriorities -ManagedProcesses $managed
+if ([string]$backgroundProcess.PriorityClass -ne 'Normal' -or $managed.Count -ne 0) {
+    throw 'Background priority restoration failed.'
+}
 
 $externalProfile = [pscustomobject]@{ name = 'External change'; executable = 'external.exe'; category = 'Test'; priorityClass = 'AboveNormal' }
 $externalProcess = [pscustomobject]@{
@@ -109,6 +140,52 @@ $null = Set-ZeroStutterProfilePriorities -Targets @($highTarget) -ManagedProcess
 if ([string]$highPriorityProcess.PriorityClass -ne 'High' -or $managed.Count -ne 0) {
     throw 'A pre-existing high priority was changed.'
 }
+$liveChild = $null
+$liveManaged = @{}
+try {
+    $currentHost = Get-Process -Id $PID -ErrorAction Stop
+    $hostExecutable = $currentHost.Path
+    if ([string]::IsNullOrWhiteSpace($hostExecutable)) { throw 'Could not locate PowerShell for the isolated process check.' }
+    $liveChild = Start-Process -FilePath $hostExecutable -ArgumentList '-NoLogo -NoProfile -Command "Start-Sleep -Seconds 30"' -PassThru -WindowStyle Hidden
+    $liveProcess = Get-Process -Id $liveChild.Id -ErrorAction Stop
+    if ($liveProcess.PriorityClass -notin @(
+        [System.Diagnostics.ProcessPriorityClass]::Normal,
+        [System.Diagnostics.ProcessPriorityClass]::BelowNormal
+    )) {
+        $liveProcess.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Normal
+    }
+    $liveBaseline = [System.Diagnostics.ProcessPriorityClass]$liveProcess.PriorityClass
+    $liveProfile = [pscustomobject]@{
+        name = 'Temporary child process'; executable = ($liveProcess.ProcessName + '.exe'); category = 'Test'; priorityClass = 'AboveNormal'
+    }
+    $liveTarget = @(Get-ZeroStutterTargetProcesses -Profiles @($liveProfile) -Processes @($liveProcess))
+    $liveCpuSamples = @{}
+    $liveSampleTime = [DateTime]::UtcNow
+    Update-ZeroStutterTargetUsage -Targets $liveTarget -CpuSamples $liveCpuSamples -LogicalProcessorCount ([Environment]::ProcessorCount) -SampleTime $liveSampleTime
+    Start-Sleep -Milliseconds 150
+    $liveProcess = Get-Process -Id $liveChild.Id -ErrorAction Stop
+    $liveTarget = @(Get-ZeroStutterTargetProcesses -Profiles @($liveProfile) -Processes @($liveProcess))
+    Update-ZeroStutterTargetUsage -Targets $liveTarget -CpuSamples $liveCpuSamples -LogicalProcessorCount ([Environment]::ProcessorCount) -SampleTime ([DateTime]::UtcNow)
+    if ($liveTarget[0].CpuPercent -eq 'n/a' -or [double]$liveTarget[0].CpuPercent -lt 0 -or
+        [double]$liveTarget[0].WorkingSetMB -le 0) {
+        throw 'Live process CPU and working-set sampling did not return usable values.'
+    }
+    $liveActions = @(Set-ZeroStutterProfilePriorities -Targets $liveTarget -ManagedProcesses $liveManaged)
+    $liveProcess.Refresh()
+    if ($liveActions.Count -ne 1 -or $liveProcess.PriorityClass -ne [System.Diagnostics.ProcessPriorityClass]::AboveNormal) {
+        throw 'Could not change priority on the isolated child process.'
+    }
+    $null = Restore-ZeroStutterPriorities -ManagedProcesses $liveManaged
+    $restoredLiveProcess = Get-Process -Id $liveChild.Id -ErrorAction Stop
+    if ($restoredLiveProcess.PriorityClass -ne $liveBaseline) { throw 'The isolated child process did not return to its original priority.' }
+    $restoredLiveProcess.Dispose()
+} finally {
+    if ($liveManaged.Count -gt 0) { $null = Restore-ZeroStutterPriorities -ManagedProcesses $liveManaged }
+    if ($null -ne $liveChild) {
+        if (-not $liveChild.HasExited) { Stop-Process -Id $liveChild.Id -Force -ErrorAction SilentlyContinue }
+        $liveChild.Dispose()
+    }
+}
 $tempProfile = Join-Path ([IO.Path]::GetTempPath()) ('zerostutter-invalid-' + [guid]::NewGuid().ToString('N') + '.json')
 try {
     $invalidDocument = @{
@@ -131,15 +208,28 @@ try {
     $rejectedShape = $false
     try { $null = Get-ZeroStutterProfiles -Path $tempProfile } catch { $rejectedShape = $true }
     if (-not $rejectedShape) { throw 'A profile object was accepted instead of a profiles array.' }
+    $belowDocument = @{
+        version = 1
+        profiles = @(@{ name = 'Background'; executable = 'background.exe'; category = 'Test'; priorityClass = 'BelowNormal' })
+    }
+    $belowDocument | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $tempProfile -Encoding UTF8
+    $parsedBelowProfile = @(Get-ZeroStutterProfiles -Path $tempProfile)
+    if ($parsedBelowProfile.Count -ne 1 -or $parsedBelowProfile[0].priorityClass -ne 'BelowNormal') {
+        throw 'A valid BelowNormal profile was not accepted.'
+    }
 } finally {
     Remove-Item -LiteralPath $tempProfile -Force -ErrorAction SilentlyContinue
 }
 
 
 $schema = Get-Content -LiteralPath (Join-Path $repoRoot 'schema\profiles.schema.json') -Raw | ConvertFrom-Json -ErrorAction Stop
+$allowedPriorities = @($schema.properties.profiles.items.properties.priorityClass.enum)
 foreach ($profile in $profiles) {
     if ([string]$profile.executable -notmatch [string]$schema.properties.profiles.items.properties.executable.pattern) {
         throw "Profile executable does not match the schema: $($profile.executable)"
+    }
+    if ([string]$profile.priorityClass -notin $allowedPriorities) {
+        throw "Profile priority does not match the schema: $($profile.priorityClass)"
     }
 }
 

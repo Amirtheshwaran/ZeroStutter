@@ -18,7 +18,7 @@
           "name": { "type": "string", "minLength": 1 },
           "executable": { "type": "string", "pattern": "^[^/\\\\\\\\]+[.]exe$" },
           "category": { "type": "string", "minLength": 1 },
-          "priorityClass": { "enum": ["Observe", "AboveNormal"] }
+          "priorityClass": { "enum": ["Observe", "AboveNormal", "BelowNormal"] }
         }
       }
     }

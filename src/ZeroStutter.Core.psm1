@@ -26,8 +26,8 @@ function Get-ZeroStutterProfiles {
         if ([IO.Path]::GetFileName($executable) -cne $executable -or $executable -notmatch '^[^\\/]+\.exe$') {
             throw "Profile '$($profile.name)' must name a .exe file, not a path."
         }
-        if ([string]$profile.priorityClass -notin @('Observe', 'AboveNormal')) {
-            throw "Profile '$($profile.name)' has an unsupported priorityClass. Use Observe or AboveNormal."
+        if ([string]$profile.priorityClass -notin @('Observe', 'AboveNormal', 'BelowNormal')) {
+            throw "Profile '$($profile.name)' has an unsupported priorityClass. Use Observe, AboveNormal, or BelowNormal."
         }
         $nameKey = ([string]$profile.name).ToLowerInvariant()
         $executableKey = $executable.ToLowerInvariant()
@@ -57,15 +57,56 @@ function Get-ZeroStutterTargetProcesses {
                     Executable        = [string]$profile.executable
                     ProcessName       = [string]$process.ProcessName
                     ProcessId         = [int]$process.Id
+                    CpuPercent        = 'n/a'
+                    WorkingSetMB      = $null
                     PriorityClass     = $priority
                     ConfiguredPriority = [string]$profile.priorityClass
-                    Status            = if ([string]$profile.priorityClass -eq 'Observe') { 'Observe only' } else { 'Not changed' }
+                    Status            = if ([string]$profile.priorityClass -eq 'Observe') { 'Observe' } else { 'Opt-in disabled' }
                     Process           = $process
                 }
             }
         }
     }
     return $targets
+}
+
+function Update-ZeroStutterTargetUsage {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Targets,
+        [Parameter(Mandatory)][hashtable]$CpuSamples,
+        [ValidateRange(1, 4096)][int]$LogicalProcessorCount = [Environment]::ProcessorCount,
+        [DateTime]$SampleTime = [DateTime]::UtcNow
+    )
+
+    $seen = @{}
+    foreach ($target in $Targets) {
+        $target.CpuPercent = 'n/a'
+        $target.WorkingSetMB = $null
+        try {
+            $target.WorkingSetMB = [math]::Round(([double]$target.Process.WorkingSet64 / 1MB), 1)
+        } catch { }
+
+        try {
+            $process = $target.Process
+            $identity = '{0}:{1}' -f [int]$process.Id, $process.StartTime.ToUniversalTime().Ticks
+            $seen[$identity] = $true
+            $cpuSeconds = [double]$process.CPU
+            if ($CpuSamples.ContainsKey($identity)) {
+                $previous = $CpuSamples[$identity]
+                $elapsedSeconds = ($SampleTime - [DateTime]$previous.SampleTime).TotalSeconds
+                $cpuDelta = $cpuSeconds - [double]$previous.CpuSeconds
+                if ($elapsedSeconds -gt 0 -and $cpuDelta -ge 0) {
+                    $target.CpuPercent = [math]::Round((100 * $cpuDelta / $elapsedSeconds / $LogicalProcessorCount), 1)
+                }
+            }
+            $CpuSamples[$identity] = [pscustomobject]@{ CpuSeconds = $cpuSeconds; SampleTime = $SampleTime }
+        } catch { }
+    }
+
+    foreach ($identity in @($CpuSamples.Keys)) {
+        if (-not $seen.ContainsKey($identity)) { $null = $CpuSamples.Remove($identity) }
+    }
 }
 
 function Set-ZeroStutterProfilePriorities {
@@ -76,8 +117,9 @@ function Set-ZeroStutterProfilePriorities {
     )
     $actions = @()
     foreach ($target in $Targets) {
-        if ([string]$target.ConfiguredPriority -ne 'AboveNormal') {
-            $target.Status = 'Observe only'
+        $configuredPriority = [string]$target.ConfiguredPriority
+        if ($configuredPriority -eq 'Observe') {
+            $target.Status = 'Observe'
             continue
         }
         try {
@@ -86,32 +128,38 @@ function Set-ZeroStutterProfilePriorities {
             $startTimeTicks = $process.StartTime.ToUniversalTime().Ticks
             $identity = '{0}:{1}' -f $processId, $startTimeTicks
             if ($ManagedProcesses.ContainsKey($identity)) {
-                $target.Status = 'Temporarily raised by ZeroStutter'
+                $target.Status = "Temporary: $configuredPriority"
                 continue
             }
+            if ($process -is [System.Diagnostics.Process]) { $process.Refresh() }
             $currentPriority = [System.Diagnostics.ProcessPriorityClass]$process.PriorityClass
-            if ($currentPriority -eq [System.Diagnostics.ProcessPriorityClass]::AboveNormal) {
-                $target.Status = 'Already AboveNormal; left unchanged'
+            $desiredPriority = [System.Enum]::Parse([System.Diagnostics.ProcessPriorityClass], $configuredPriority, $true)
+            if ($currentPriority -eq $desiredPriority) {
+                $target.Status = 'Already set'
                 continue
             }
-            if ($currentPriority -notin @(
-                [System.Diagnostics.ProcessPriorityClass]::Normal,
-                [System.Diagnostics.ProcessPriorityClass]::BelowNormal
-            )) {
-                $target.Status = 'Skipped to preserve existing priority'
+            $canChange = if ($desiredPriority -eq [System.Diagnostics.ProcessPriorityClass]::AboveNormal) {
+                $currentPriority -in @([System.Diagnostics.ProcessPriorityClass]::Normal, [System.Diagnostics.ProcessPriorityClass]::BelowNormal)
+            } else {
+                $desiredPriority -eq [System.Diagnostics.ProcessPriorityClass]::BelowNormal -and
+                    $currentPriority -eq [System.Diagnostics.ProcessPriorityClass]::Normal
+            }
+            if (-not $canChange) {
+                $target.Status = 'Preserved'
                 continue
             }
-            $process.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::AboveNormal
+            $process.PriorityClass = $desiredPriority
             $ManagedProcesses[$identity] = [pscustomobject]@{
                 Process          = $process
                 OriginalPriority = $currentPriority
+                AppliedPriority  = $desiredPriority
                 ProfileName      = [string]$target.ProfileName
             }
-            $target.PriorityClass = 'AboveNormal'
-            $target.Status = 'Temporarily raised; restore on normal exit'
-            $actions += "Set $($target.ProcessName) (PID $processId) to AboveNormal."
+            $target.PriorityClass = [string]$desiredPriority
+            $target.Status = "Temporary: $configuredPriority"
+            $actions += "Set $($target.ProcessName) (PID $processId) to $configuredPriority."
         } catch {
-            $target.Status = 'Not changed; process exited or access was denied'
+            $target.Status = 'Skipped (exit/access)'
         }
     }
     return $actions
@@ -123,11 +171,15 @@ function Remove-ZeroStutterExitedProcesses {
     foreach ($identity in @($ManagedProcesses.Keys)) {
         $entry = $ManagedProcesses[$identity]
         try {
+            if ($entry.Process -is [System.Diagnostics.Process]) { $entry.Process.Refresh() }
             if ($entry.Process.HasExited) {
                 if ($entry.Process -is [System.Diagnostics.Process]) { $entry.Process.Dispose() }
                 $null = $ManagedProcesses.Remove($identity)
             }
-        } catch { $null = $ManagedProcesses.Remove($identity) }
+        } catch {
+            if ($entry.Process -is [System.Diagnostics.Process]) { $entry.Process.Dispose() }
+            $null = $ManagedProcesses.Remove($identity)
+        }
     }
 }
 
@@ -138,10 +190,11 @@ function Restore-ZeroStutterPriorities {
     foreach ($identity in @($ManagedProcesses.Keys)) {
         $entry = $ManagedProcesses[$identity]
         try {
+            if ($entry.Process -is [System.Diagnostics.Process]) { $entry.Process.Refresh() }
             if ($entry.Process.HasExited) {
                 $results += "$($entry.ProfileName): process ended; no restoration needed."
             } elseif ([System.Diagnostics.ProcessPriorityClass]$entry.Process.PriorityClass -eq
-                [System.Diagnostics.ProcessPriorityClass]::AboveNormal) {
+                [System.Diagnostics.ProcessPriorityClass]$entry.AppliedPriority) {
                 $entry.Process.PriorityClass = $entry.OriginalPriority
                 $results += "$($entry.ProfileName): restored its original priority."
             } else {
@@ -160,6 +213,7 @@ function Restore-ZeroStutterPriorities {
 Export-ModuleMember -Function @(
     'Get-ZeroStutterProfiles',
     'Get-ZeroStutterTargetProcesses',
+    'Update-ZeroStutterTargetUsage',
     'Set-ZeroStutterProfilePriorities',
     'Remove-ZeroStutterExitedProcesses',
     'Restore-ZeroStutterPriorities'

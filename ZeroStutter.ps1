@@ -26,6 +26,7 @@ if (-not (Test-Path -LiteralPath $modulePath -PathType Leaf)) { throw "Core modu
 Import-Module -Name $modulePath -Force
 $profiles = @(Get-ZeroStutterProfiles -Path $ProfilePath)
 $managedProcesses = @{}
+$cpuSamples = @{}
 
 function Get-MemorySnapshot {
     try {
@@ -39,16 +40,40 @@ function Get-MemorySnapshot {
 
 function Get-CurrentTargets {
     $processes = @(Get-Process -ErrorAction SilentlyContinue)
-    return @(Get-ZeroStutterTargetProcesses -Profiles $profiles -Processes $processes)
+    $targets = @(Get-ZeroStutterTargetProcesses -Profiles $profiles -Processes $processes)
+    $targetIds = @{}
+    foreach ($target in $targets) { $targetIds[[int]$target.ProcessId] = $true }
+    foreach ($process in $processes) {
+        if ($process -is [System.Diagnostics.Process] -and -not $targetIds.ContainsKey([int]$process.Id)) {
+            $process.Dispose()
+        }
+    }
+    Update-ZeroStutterTargetUsage -Targets $targets -CpuSamples $cpuSamples
+    return $targets
+}
+
+function Dispose-UnmanagedTargets {
+    param([AllowEmptyCollection()][object[]]$Targets)
+    foreach ($target in $Targets) {
+        $process = $target.Process
+        if ($process -isnot [System.Diagnostics.Process]) { continue }
+        try {
+            $identity = '{0}:{1}' -f [int]$process.Id, $process.StartTime.ToUniversalTime().Ticks
+            if (-not $managedProcesses.ContainsKey($identity) -or
+                -not [object]::ReferenceEquals($managedProcesses[$identity].Process, $process)) {
+                $process.Dispose()
+            }
+        } catch { $process.Dispose() }
+    }
 }
 
 function Update-Targets {
     param([object[]]$Targets)
     foreach ($target in $Targets) {
         if ($target.ConfiguredPriority -eq 'Observe') {
-            $target.Status = 'Observe only'
+            $target.Status = 'Observe'
         } elseif (-not $ApplyProfilePriorities) {
-            $target.Status = 'Profile opts in; use -ApplyProfilePriorities to apply'
+            $target.Status = 'Opt-in disabled'
         }
     }
     if ($ApplyProfilePriorities) {
@@ -63,7 +88,7 @@ function Show-Dashboard {
     param([object[]]$Targets)
     Clear-Host
     Write-Host '============================================================================' -ForegroundColor Cyan
-    Write-Host '  ZeroStutter | Windows process monitor' -ForegroundColor Yellow
+    Write-Host '  ZeroStutter | Process and CPU monitor' -ForegroundColor Yellow
     Write-Host '============================================================================' -ForegroundColor Cyan
     Write-Host '  Read-only by default. No timer, memory, affinity, registry, or power-plan changes.' -ForegroundColor DarkGray
     $memory = Get-MemorySnapshot
@@ -78,7 +103,11 @@ function Show-Dashboard {
     if ($Targets.Count -eq 0) {
         Write-Host '  No profile-listed processes are running.' -ForegroundColor DarkGray
     } else {
-        $Targets | Select-Object ProfileName, ProcessName, ProcessId, PriorityClass, Status | Format-Table -AutoSize
+        $Targets | Select-Object @{Name = 'Profile'; Expression = { $_.ProfileName } },
+            @{Name = 'PID'; Expression = { $_.ProcessId } },
+            @{Name = 'CPU%'; Expression = { $_.CpuPercent } },
+            @{Name = 'RAM MB'; Expression = { $_.WorkingSetMB } },
+            @{Name = 'Priority'; Expression = { $_.PriorityClass } }, Status | Format-Table -AutoSize
     }
     Write-Host '  Q: quit and restore managed priorities | Ctrl+C: stop and restore in finally' -ForegroundColor Gray
     Write-Host '============================================================================' -ForegroundColor Cyan
@@ -89,12 +118,17 @@ if ($Once) {
     Update-Targets -Targets $targets
     Write-Host ("Loaded {0} profiles; found {1} matching process(es)." -f $profiles.Count, $targets.Count)
     if ($targets.Count -gt 0) {
-        $targets | Select-Object ProfileName, ProcessName, ProcessId, PriorityClass, Status | Format-Table -AutoSize
+        $targets | Select-Object @{Name = 'Profile'; Expression = { $_.ProfileName } },
+            @{Name = 'PID'; Expression = { $_.ProcessId } },
+            @{Name = 'CPU%'; Expression = { $_.CpuPercent } },
+            @{Name = 'RAM MB'; Expression = { $_.WorkingSetMB } },
+            @{Name = 'Priority'; Expression = { $_.PriorityClass } }, Status | Format-Table -AutoSize
     }
+    Dispose-UnmanagedTargets -Targets $targets
     return
 }
 if ($ApplyProfilePriorities) {
-    Write-Warning 'Only profiles set to AboveNormal will be changed. Do not use this with software whose rules prohibit process-tuning utilities. Normal Q/Ctrl+C exit restores the original value; forced termination can leave a target process AboveNormal until it exits.'
+    Write-Warning 'Only explicitly configured AboveNormal or BelowNormal profiles can be changed. Priority affects CPU scheduling only and may hurt performance. Normal Q/Ctrl+C exit restores the original value; forced termination can leave the selected priority until the process exits.'
 }
 
 try {
@@ -110,6 +144,7 @@ try {
         Start-Sleep -Seconds $RefreshSeconds
     }
 } finally {
+    if ($null -ne $targets) { Dispose-UnmanagedTargets -Targets $targets }
     if ($ApplyProfilePriorities -and $managedProcesses.Count -gt 0) {
         Write-Host ''
         foreach ($result in @(Restore-ZeroStutterPriorities -ManagedProcesses $managedProcesses)) {
