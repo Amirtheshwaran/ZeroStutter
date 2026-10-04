@@ -21,6 +21,7 @@ foreach ($file in $files) {
 $sourceCommit = 'unknown'
 $sourceDirty = $null
 if (Get-Command git -ErrorAction SilentlyContinue) {
+    $previousNativeExitCode = $global:LASTEXITCODE
     try {
         $revision = & git -C $PSScriptRoot rev-parse HEAD 2>$null
         if ($LASTEXITCODE -eq 0) {
@@ -31,6 +32,10 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     } catch {
         # Downloaded source/package ZIPs have no .git directory. Their file hashes
         # remain useful without claiming an unverifiable commit or clean tree.
+    } finally {
+        # Optional provenance discovery must not leak a failed Git probe into a
+        # caller such as GitHub Actions, which checks LASTEXITCODE after scripts.
+        $global:LASTEXITCODE = $previousNativeExitCode
     }
 }
 $manifest = [ordered]@{ Version=$Version; SourceCommit=$sourceCommit; SourceDirty=$sourceDirty; BuiltUtc=[DateTime]::UtcNow.ToString('o'); Platform='Windows x64'; Signed=$false; Files=@() }

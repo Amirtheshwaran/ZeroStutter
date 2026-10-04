@@ -53,6 +53,7 @@ try {
     # A release ZIP includes sufficient source to rebuild without Git metadata.
     $rebuiltDirectory = Join-Path $testRoot 'rebuilt'
     & (Join-Path $expanded 'Build-Package.ps1') -OutputDirectory $rebuiltDirectory
+    if ($LASTEXITCODE -ne 0) { throw 'Optional Git discovery leaked a failure exit code after a successful ZIP rebuild.' }
     $rebuiltStage = @(Get-ChildItem -LiteralPath $rebuiltDirectory -Directory -Filter 'package-*')[0].FullName
     $rebuiltManifest = Get-Content -LiteralPath (Join-Path $rebuiltStage 'build-manifest.json') -Raw | ConvertFrom-Json
     if ($rebuiltManifest.SourceCommit -ne 'unknown' -or $null -ne $rebuiltManifest.SourceDirty) { throw 'A ZIP rebuild claimed unverifiable Git provenance.' }
