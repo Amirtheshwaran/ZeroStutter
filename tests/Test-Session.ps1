@@ -10,6 +10,7 @@ $hostPath = $hostProcess.Path
 $hostProcess.Dispose()
 $game = $null
 $session = $null
+$desktopOwner = $null
 function Start-TestHost {
     param([string]$Command, [string]$Label)
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Command))
@@ -25,6 +26,18 @@ function Wait-TestCondition {
         if ($clock.Elapsed.TotalSeconds -gt 25) { throw $Failure }
         Start-Sleep -Milliseconds 100
     }
+}
+function Assert-TestRestored {
+    param([string]$Label, [string]$ExpectedEndReason, [string]$ResultPath)
+    if (-not $session.WaitForExit(25000)) { throw "$Label session did not stop." }
+    if ($session.ExitCode -ne 0) { throw "$Label session failed: $(Get-Content (Join-Path $testRoot ($Label + '.err')) -Raw)" }
+    $game.Refresh()
+    if ($game.PriorityClass -ne [Diagnostics.ProcessPriorityClass]::Normal) { throw "$Label did not restore priority." }
+    $nativeAfter = New-ZeroStutterProcessTuningState -ProcessId $game.Id -HighQoS
+    if ($nativeAfter.OriginalPowerControlMask -ne $original.OriginalPowerControlMask -or $nativeAfter.OriginalPowerStateMask -ne $original.OriginalPowerStateMask) { throw "$Label did not restore power throttling." }
+    if (Test-Path -LiteralPath (Join-Path $state 'session.json')) { throw "$Label retained the recovery journal." }
+    $result = Get-Content -LiteralPath $ResultPath -Raw | ConvertFrom-Json
+    if ($result.EndReason -ne $ExpectedEndReason -or $result.PriorityStatus -notlike 'Temporary*') { throw "$Label did not report its expected end reason and applied tuning." }
 }
 try {
     $game = Start-TestHost -Command 'Start-Sleep -Seconds 180' -Label 'game'
@@ -46,6 +59,52 @@ try {
     $after = New-ZeroStutterProcessTuningState -ProcessId $game.Id -HighQoS
     if ($after.OriginalPowerControlMask -ne $original.OriginalPowerControlMask -or $after.OriginalPowerStateMask -ne $original.OriginalPowerStateMask) { throw 'Normal exit did not restore power throttling.' }
     $session.Dispose()
+
+    # A GUI owns the session independently of the recovery helper's host owner.
+    $sessionScriptPath = (Join-Path $repoRoot 'Start-ZeroStutterSession.ps1').Replace("'", "''")
+    $desktopOwner = Start-TestHost -Command 'Start-Sleep -Seconds 180' -Label 'desktop-owner'
+    $ownerTime = $desktopOwner.StartTime.ToUniversalTime().ToFileTimeUtc()
+    $signal = Join-Path $testRoot 'stop.signal'
+    $stopReport = Join-Path $testRoot 'stop-report.json'
+    $session = Start-TestHost -Command "& '$sessionScriptPath' -ProcessId $($game.Id) -Headless -StateDirectory '$state' -ReportPath '$stopReport' -StopSignalPath '$signal' -OwnerProcessId $($desktopOwner.Id) -OwnerCreationFileTime $ownerTime" -Label 'stop'
+    Wait-TestCondition { $game.Refresh(); $game.PriorityClass -eq [Diagnostics.ProcessPriorityClass]::AboveNormal } 'The stop-signal session never applied priority.'
+    [IO.File]::WriteAllText($signal, '')
+    Assert-TestRestored -Label 'stop' -ExpectedEndReason 'StopRequested' -ResultPath $stopReport
+    if (-not [IO.File]::Exists($signal)) { throw 'The session deleted the GUI-owned stop signal.' }
+    if ($desktopOwner.HasExited) { throw 'Stopping the session unexpectedly terminated its GUI owner.' }
+    $session.Dispose()
+
+    $ownerReport = Join-Path $testRoot 'owner-report.json'
+    $session = Start-TestHost -Command "& '$sessionScriptPath' -ProcessId $($game.Id) -Headless -StateDirectory '$state' -ReportPath '$ownerReport' -OwnerProcessId $($desktopOwner.Id) -OwnerCreationFileTime $ownerTime" -Label 'owner'
+    Wait-TestCondition { $game.Refresh(); $game.PriorityClass -eq [Diagnostics.ProcessPriorityClass]::AboveNormal } 'The owner-exit session never applied priority.'
+    $desktopOwner.Kill()
+    $null = $desktopOwner.WaitForExit(5000)
+    Assert-TestRestored -Label 'owner' -ExpectedEndReason 'OwnerExited' -ResultPath $ownerReport
+    $desktopOwner.Dispose()
+    $desktopOwner = $null
+    $session.Dispose()
+
+    $gameTime = $game.StartTime.ToUniversalTime().ToFileTimeUtc()
+    $invalidCases = @(
+        @{ Label = 'wrong-owner'; Arguments = "-OwnerProcessId $($game.Id) -OwnerCreationFileTime $($gameTime + 1)" },
+        @{ Label = 'missing-owner-time'; Arguments = "-OwnerProcessId $($game.Id)" },
+        @{ Label = 'missing-owner-id'; Arguments = "-OwnerCreationFileTime $gameTime" },
+        @{ Label = 'system-owner'; Arguments = "-OwnerProcessId 4 -OwnerCreationFileTime $gameTime" },
+        @{ Label = 'existing-stop'; Arguments = "-StopSignalPath '$signal'" },
+        @{ Label = 'missing-stop-parent'; Arguments = "-StopSignalPath '$(Join-Path $testRoot 'missing\stop.signal')'" }
+    )
+    foreach ($invalid in $invalidCases) {
+        $session = Start-TestHost -Command "& '$sessionScriptPath' -ProcessId $($game.Id) -Headless -Seconds 1 -StateDirectory '$state' $($invalid.Arguments)" -Label $invalid.Label
+        if (-not $session.WaitForExit(10000)) { throw "$($invalid.Label) was not rejected promptly." }
+        if ($session.ExitCode -eq 0) { throw "$($invalid.Label) was accepted." }
+        $game.Refresh()
+        if ($game.PriorityClass -ne [Diagnostics.ProcessPriorityClass]::Normal) { throw "$($invalid.Label) changed the target priority." }
+        $nativeAfter = New-ZeroStutterProcessTuningState -ProcessId $game.Id -HighQoS
+        if ($nativeAfter.OriginalPowerControlMask -ne $original.OriginalPowerControlMask -or $nativeAfter.OriginalPowerStateMask -ne $original.OriginalPowerStateMask) { throw "$($invalid.Label) changed power throttling." }
+        if (Test-Path -LiteralPath (Join-Path $state 'session.json')) { throw "$($invalid.Label) created a recovery journal." }
+        $session.Dispose()
+        $session = $null
+    }
 
     $session = Start-TestHost -Command "& '$scriptPath' -TargetProcessId $($game.Id) -Headless -StateDirectory '$state'" -Label 'crash'
     Wait-TestCondition { $game.Refresh(); $game.PriorityClass -eq [Diagnostics.ProcessPriorityClass]::AboveNormal } 'The crash-test session never applied priority.'
@@ -83,10 +142,11 @@ try {
         if (Test-Path -LiteralPath (Join-Path $state 'power-session.json')) { throw 'Live power session left its recovery journal.' }
         Write-Host 'Live power-plan activation and restoration passed.'
     }
-    Write-Host 'Session checks passed: timed cleanup, report, concurrent-session rejection, owner-crash recovery, and preserving external priority changes.'
+    Write-Host 'Session checks passed: timed cleanup, GUI stop/owner-exit cleanup, owner identity validation, report, concurrent-session rejection, owner-crash recovery, and preserving external priority changes.'
 } finally {
     if ($null -ne $session) { if (-not $session.HasExited) { $session.Kill(); $null = $session.WaitForExit(5000) }; $session.Dispose() }
     if ($null -ne $game) { if (-not $game.HasExited) { $game.Kill(); $null = $game.WaitForExit(5000) }; $game.Dispose() }
+    if ($null -ne $desktopOwner) { if (-not $desktopOwner.HasExited) { $desktopOwner.Kill(); $null = $desktopOwner.WaitForExit(5000) }; $desktopOwner.Dispose() }
     # Keep failed-run diagnostics if recovery has not completed yet.
     if (-not (Test-Path -LiteralPath (Join-Path $testRoot 'state\session.json'))) {
         $fullRoot = [IO.Path]::GetFullPath($testRoot)

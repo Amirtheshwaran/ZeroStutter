@@ -8,17 +8,31 @@ ZeroStutter helps you try Windows scheduling changes that can reduce CPU-related
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue.svg)](#requirements)
 
-**Status: experimental.** Native settings and recovery are tested on temporary processes; there are no published game-performance results yet. Shader compilation, asset streaming, GPU saturation, drivers, thermals, and network stalls need their own fixes. No utility can promise to eliminate every kind of stutter.
+**Status: experimental.** Cyberpunk 2077 accepted and restored the default controls in a real gameplay session. Our first capture pair **did not demonstrate improvement**: the tuned capture had worse frame-time tails and different presentation conditions, so it cannot establish a tuning effect. Read the [full test report](docs/testing/2026-10-02-cyberpunk.md). Shader compilation, asset streaming, GPU saturation, drivers, thermals, and network stalls need their own fixes. No utility can promise to eliminate every kind of stutter.
 
 ## Start here
 
-1. Download the repository with **Code > Download ZIP**, then extract it completely (or clone it).
+1. Download **ZeroStutter.zip** from [Releases](https://github.com/Amirtheshwaran/ZeroStutter/releases), then extract it completely.
 2. Start your game.
-3. Double-click **`Start-ZeroStutter.cmd`**, choose **1**, and enter the game's executable name, such as `cs2.exe`. Use Task Manager > Details to find it.
-4. Start with the default session. Leave the extra CPU/core-parking experiments off for your first comparison.
-5. Press **Q** in the session window to restore and stop. Closing the game also ends its session.
+3. Open **`ZeroStutter.exe`** and select the running game by its window title, executable, and PID.
+4. Start a session. Leave the extra CPU/core-parking experiments off for your first comparison.
+5. Choose **Stop & restore** to undo the session. Closing the app or game also ends the session and attempts restoration.
 
-The launcher offers a process monitor, CPU topology inspection, and recovery. Installation is optional. Nothing starts at Windows login.
+The desktop app provides process selection, tuning controls, session logs, recovery, and frame capture/analysis. Keep the executable beside the extracted scripts and `src` folder: this is a portable app folder, not a single-file executable. Installation is optional. Nothing starts at Windows login.
+
+The ZIP is unsigned. Its SHA-256 checksum and `build-manifest.json` identify the distributed files and source commit. PresentMon is obtained separately when you want to capture frames.
+
+### Using the desktop app
+
+- **Game session:** filter the process list, select the game's executable, and choose **Start session**. Wait for **ACTIVE** before treating a capture as tuned. The Activity panel reports setup, errors, and restoration.
+- **Measure & compare:** select your local PresentMon console executable and an output folder. **Arm capture** gives you a start delay to return to the game. Capture an untuned run with the session stopped, then repeat the same route with it active.
+- **Analyze a CSV / Compare two CSVs:** choose saved captures to see frame-time statistics and quality warnings. Leave the optional stream filters blank for ordinary single-process captures. Files containing multiple streams require explicit selection; the command-line interface supports separate filters for each comparison file.
+- **Stop & restore:** requests cleanup even while a capture is running. A capture spanning a session change is unsuitable as a consistently tuned run. Closing the app during measurement waits for that operation and restoration to finish.
+- **Recover previous session:** retries cleanup after an interrupted session. Read the Activity messages before starting another test.
+
+Session and analysis reports are saved under `%LOCALAPPDATA%\ZeroStutter\DesktopSessions`; frame captures use the output folder you choose. Inspect reports for personal paths before sharing them.
+
+If you downloaded the **source** ZIP or cloned the repository, build the desktop package with `Build-Package.ps1`. The existing `Start-ZeroStutter.cmd` also opens the command-line menu when no built executable is present. In that menu, choose **1** and enter a game's executable name; press **Q** to stop the session.
 
 From PowerShell in the extracted folder:
 
@@ -96,6 +110,8 @@ The report includes mean, p50, p95, p99, p99.9, maximum interval, and the fracti
 - Multiple processes or swap chains require explicit selection. The error lists available streams. Use `-BaselineProcessId`, `-CandidateProcessId`, `-BaselineSwapChain`, and `-CandidateSwapChain` for comparisons, or `-ProcessId` / `-SwapChainAddress` with `-CsvPath`.
 - Existing CSV/JSON output files are never intentionally overwritten. Each live capture uses its own ETW session name.
 
+Each capture saves PresentMon's stdout, stderr, and exit code beside the CSV as **`<capture>.csv.presentmon.log`** without overwriting an existing log. Warnings are surfaced. Captures with known ETW loss, overflowed presents, or no usable frame stream are rejected; their CSV and diagnostic log are retained for inspection. Review these diagnostics before comparing or sharing results.
+
 ## Restoration and interrupted sessions
 
 A game session saves original settings before applying changes. Normal shutdown restores settings only when they still match the values ZeroStutter applied, preserving different values selected afterward. A small separate PowerShell recovery helper watches the session owner and attempts cleanup if that owner is killed. Recovery validates the PID **and process creation time**.
@@ -117,13 +133,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\ZeroStutter\uninstall.ps1"
 ```
 
-The installer copies scripts, native source, README, and MIT license to `%LOCALAPPDATA%\ZeroStutter`, and creates a menu shortcut. Close sessions before updating. Valid profiles are preserved; incompatible profiles are backed up. Uninstall attempts recovery first and keeps unknown files, reports, and backups.
+The installer copies the executable, scripts, source, documentation, and MIT license to `%LOCALAPPDATA%\ZeroStutter`, and creates a desktop app shortcut. A source checkout builds the executable locally with the Windows .NET Framework compiler. Close the desktop app and all sessions before updating. Valid profiles are preserved; incompatible profiles are backed up. Uninstall attempts recovery first and keeps unknown files, reports, and backups.
 
 The legacy `-ApplyProfilePriorities` monitor mode reads `Observe`, `AboveNormal`, or `BelowNormal` from `profiles.json`. It applies to **every** process with the listed name and has normal-exit restoration only. Prefer a game session for one chosen process and crash recovery. Common names such as `node.exe` may identify unrelated applications.
 
 ## Requirements and boundaries
 
-- Windows 10 version 1709 or newer, or Windows 11; Windows PowerShell 5.1 or PowerShell 7.
+- Windows 10 version 1709 or newer, or Windows 11; Windows PowerShell 5.1 or PowerShell 7. The desktop executable requires **64-bit Windows and .NET Framework 4.8** and uses the included Windows PowerShell host for its backend.
 - Normal-user access to the selected application. Protected games may deny changes; ZeroStutter reports failure and does not bypass protection. Check the game's rules before using external tuning software.
 - Power-plan changes depend on the device's available policies and permissions. Some managed or Modern Standby systems may reject them.
 - No injection, process-memory scanning, driver, telemetry, login task, or automatic network downloads.
@@ -139,9 +155,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build-Package.ps1
 
 Tests cover real priority, CPU Set, and HighQoS changes on temporary child processes; JSON recovery; termination of a session owner; preserving external changes; mocked power-plan failure/recovery paths; capture argument/cleanup fixtures; frame statistics; profile validation; and installation/removal. Routine tests do not change the host power plan or tune your other applications. Synthetic frame data tests arithmetic, not gaming performance. Hybrid selection has synthetic coverage and is exercised natively only on hardware that exposes distinct classes.
 
+Desktop checks compile the x64 GUI, exercise its PowerShell argument/output protocol, verify package hashes, and rebuild the extracted ZIP. Manual UI checks on 2026-10-03/04 confirmed process selection, session Start/Stop, restoration on window close, and comparison of the saved Cyberpunk captures with their quality warnings. Independent API readings verified restoration; the disposable UI test process does not model gaming performance.
+
 For an explicit hardware integration check, `tests\Test-Session.ps1 -IncludePowerPlan` also activates a temporary power-plan copy for two seconds and verifies restoration. It needs permission to create and activate power plans. This check is excluded from routine CI.
 
-CI runs both shells and builds a portable ZIP with a SHA-256 checksum as a workflow artifact. The local build writes to `dist`; choose a new `-OutputDirectory` for another build.
+CI runs both shells and compiles the desktop executable into a portable ZIP with a SHA-256 checksum and source/file manifest. The local build writes to `dist`; choose a new `-OutputDirectory` for another build. The package staging folder is retained so you can inspect its contents. `Build-Desktop.ps1 -OutputPath <new-path>\ZeroStutter.exe` compiles only the UI; it still needs the runtime files beside it.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). When reporting performance, include the game, CPU/GPU, Windows build, settings, exact ZeroStutter options, repeated captures, and failures as well as successes. Reports can contain application names and local paths; inspect them before sharing.
 

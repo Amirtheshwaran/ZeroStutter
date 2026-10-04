@@ -244,7 +244,7 @@ $originalLocalAppData = $env:LOCALAPPDATA
 try {
     $env:LOCALAPPDATA = $testRoot
     & (Join-Path $repoRoot 'install.ps1') -SkipShortcut | Out-Null
-    foreach ($relative in @('ZeroStutter.ps1', 'profiles.json', 'src\ZeroStutter.Core.psm1', 'schema\profiles.schema.json')) {
+    foreach ($relative in @('ZeroStutter.exe', 'ZeroStutter.ps1', 'profiles.json', 'src\ZeroStutter.Core.psm1', 'src\ZeroStutter.Desktop.cs', 'Build-Desktop.ps1', 'schema\profiles.schema.json', 'docs\testing\2026-10-02-cyberpunk.md')) {
         if (-not (Test-Path -LiteralPath (Join-Path $testInstall $relative) -PathType Leaf)) {
             throw "Installer did not copy $relative."
         }
@@ -267,10 +267,16 @@ try {
     if ($resetProfileDoc.version -ne 1 -or @($resetProfileDoc.profiles).Count -lt 1) { throw 'Installer did not install valid defaults after backup.' }
 
     Set-Content -LiteralPath (Join-Path $testInstall 'keep.txt') -Value 'user file'
+    $profileHashBeforeUninstall = (Get-FileHash -LiteralPath $customProfilesPath -Algorithm SHA256).Hash
     & (Join-Path $repoRoot 'uninstall.ps1') -SkipShortcut | Out-Null
     if (Test-Path -LiteralPath $customProfilesPath) { throw 'Uninstaller left an installed profile behind.' }
+    if (Test-Path -LiteralPath (Join-Path $testInstall 'ZeroStutter.exe')) { throw 'Uninstaller left the desktop executable behind.' }
     if (-not (Test-Path -LiteralPath (Join-Path $testInstall 'keep.txt'))) {
         throw 'Uninstaller removed a file it did not install.'
+    }
+    $uninstallBackups = @(Get-ChildItem -LiteralPath $testInstall -Filter 'profiles.json.backup-uninstall-*' -File)
+    if ($uninstallBackups.Count -ne 1 -or (Get-FileHash -LiteralPath $uninstallBackups[0].FullName -Algorithm SHA256).Hash -ne $profileHashBeforeUninstall) {
+        throw 'Uninstaller did not preserve the exact installed user profiles.'
     }
 } finally {
     $env:LOCALAPPDATA = $originalLocalAppData
@@ -284,7 +290,7 @@ Remove-Module ZeroStutter.Core -ErrorAction SilentlyContinue
 & (Join-Path $repoRoot 'ZeroStutter.ps1') -Once | Out-Null
 if (-not $?) { throw 'Read-only -Once scan failed.' }
 Write-Host "Core checks passed. Parsed $($scriptPaths.Count) PowerShell files and validated $($profiles.Count) profiles."
-foreach ($suite in @('Test-Tuning.ps1', 'Test-Power.ps1', 'Test-Measurement.ps1', 'Test-Session.ps1')) {
+foreach ($suite in @('Test-Tuning.ps1', 'Test-Power.ps1', 'Test-Measurement.ps1', 'Test-Session.ps1', 'Test-Desktop.ps1')) {
     & (Join-Path $PSScriptRoot $suite)
 }
 Write-Host 'All ZeroStutter validation suites passed.'

@@ -74,7 +74,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Compare') {
     $rows | Format-Table -AutoSize | Out-Host
     Write-Host "SlowFramePercent counts intervals above $SlowFrameThresholdMs ms."
     Write-Host $report.Interpretation
-    foreach ($warning in @($before.Warnings) + @($after.Warnings)) { Write-Warning $warning }
+    foreach ($warning in $report.Warnings) { Write-Warning $warning }
 } else {
     $arguments = @{ Path = $CsvPath }
     if ($PSBoundParameters.ContainsKey('ProcessId')) { $arguments.ProcessId = $ProcessId }

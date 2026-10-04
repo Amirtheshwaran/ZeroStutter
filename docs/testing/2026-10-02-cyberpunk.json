@@ -1,0 +1,350 @@
+{
+  "SchemaVersion": 1,
+  "Date": "2026-10-02",
+  "Game": "Cyberpunk 2077",
+  "GameVersion": "2.31",
+  "BaseCommit": "985cbb74ffe9db9dda024324f6171e20c22a37f1",
+  "LocalChanges": "Capture validation and diagnostics fixes",
+  "Environment": {
+    "CPU": "AMD Ryzen 7 7800X3D",
+    "Cores": 8,
+    "LogicalProcessors": 16,
+    "GPU": "AMD Radeon RX 9070 XT",
+    "GPUDriver": "32.0.31044.16",
+    "InstalledRAMGiB": 32,
+    "OS": "Windows 11 Home",
+    "WindowsBuild": "26200",
+    "Resolution": "2560x1440",
+    "WindowMode": "Fullscreen",
+    "Preset": "Custom",
+    "FrameGeneration": "Off",
+    "RayTracing": false,
+    "ResolutionScaling": "Off",
+    "VSync": false,
+    "GameFrameCap": false,
+    "GameSettingsFileHashUnchanged": true,
+    "PowerPlanControlled": false,
+    "PresentMonVersion": "2.6.0"
+  },
+  "Protocol": {
+    "Mode": "Regular gameplay",
+    "Order": [
+      "A1",
+      "B1"
+    ],
+    "Pairs": 1,
+    "CaptureSeconds": 45,
+    "DelaySeconds": 5,
+    "DedicatedExcludedWarmup": false,
+    "FixedCamera": false,
+    "RepeatableRoute": false,
+    "ForegroundFocusControlled": false,
+    "UnparkCores": false,
+    "CpuPolicy": "Default"
+  },
+  "Metric": {
+    "Name": "PresentToPresent",
+    "Column": "msBetweenPresents",
+    "Definition": "Time between consecutive application Present calls, including presents that were not displayed.",
+    "Unit": "milliseconds",
+    "PercentileMethod": "Nearest rank: sorted[ceil(percentile * count) - 1]. No interpolation.",
+    "OutlierTrimming": false,
+    "IncludesDroppedPresents": true
+  },
+  "Runs": [
+    {
+      "Label": "A1",
+      "DefaultSession": false,
+      "CsvSHA256": "a3b279d24a3d12658e67bff781a42e2996ee1ba5c710ebdf9febc03a1e49c4e9",
+      "Metrics": {
+        "TotalRows": 4127,
+        "FrameCount": 4127,
+        "ExcludedRows": 0,
+        "SkipFirstFrames": 0,
+        "SkippedRows": 0,
+        "SumOfIntervalsSeconds": 44.979266400000164,
+        "MeanMs": 10.898780324691097,
+        "P50Ms": 10.8905,
+        "P95Ms": 11.6287,
+        "P99Ms": 12.0577,
+        "P999Ms": 12.9058,
+        "MaximumMs": 13.6561,
+        "SlowFrameThresholdMs": 33.333,
+        "SlowFrameCount": 0,
+        "SlowFramePercent": 0.0
+      },
+      "PresentModes": {
+        "Hardware: Independent Flip": 4127
+      },
+      "DroppedRows": 0,
+      "PresentModeTransitions": [
+        {
+          "CaptureRelativeSeconds": 0.0084384,
+          "Mode": "Hardware: Independent Flip"
+        }
+      ],
+      "SlowIntervals": [],
+      "PresentMonExitCode": 0,
+      "EventLossReported": false,
+      "CaptureWarning": "Non-elevated process querying may not identify short-lived processes or processes on other accounts.",
+      "AnalysisWarnings": [],
+      "PresentationDiagnostics": {
+        "Scope": "Selected stream rows after SkipFirstFrames, before metric validity and undisplayed-frame exclusions.",
+        "Rows": 4127,
+        "PresentModeColumnAvailable": true,
+        "KnownPresentModeRows": 4127,
+        "UnknownPresentModeRows": 0,
+        "ModeCounts": [
+          {
+            "Mode": "Hardware: Independent Flip",
+            "Rows": 4127,
+            "PercentOfKnownRows": 100.0
+          }
+        ],
+        "MixedPresentModes": false,
+        "DroppedColumnAvailable": true,
+        "KnownDroppedRows": 4127,
+        "UnknownDroppedRows": 0,
+        "DroppedRows": 0,
+        "DroppedPercentOfKnownRows": 0.0
+      }
+    },
+    {
+      "Label": "B1",
+      "DefaultSession": true,
+      "CsvSHA256": "c50bd0cf79079dd9ed994256681ab6be70092b6cad2dbb000e70d272de48a963",
+      "Metrics": {
+        "TotalRows": 3820,
+        "FrameCount": 3820,
+        "ExcludedRows": 0,
+        "SkipFirstFrames": 0,
+        "SkippedRows": 0,
+        "SumOfIntervalsSeconds": 44.95704890000008,
+        "MeanMs": 11.76886096858641,
+        "P50Ms": 11.1614,
+        "P95Ms": 12.529,
+        "P99Ms": 22.2338,
+        "P999Ms": 227.83610000000002,
+        "MaximumMs": 247.55780000000001,
+        "SlowFrameThresholdMs": 33.333,
+        "SlowFrameCount": 18,
+        "SlowFramePercent": 0.4712041884816754
+      },
+      "PresentModes": {
+        "Composed: Flip": 3071,
+        "Hardware: Independent Flip": 749
+      },
+      "DroppedRows": 2024,
+      "PresentModeTransitions": [
+        {
+          "CaptureRelativeSeconds": 0.0018255,
+          "Mode": "Hardware: Independent Flip"
+        },
+        {
+          "CaptureRelativeSeconds": 6.8695979,
+          "Mode": "Composed: Flip"
+        },
+        {
+          "CaptureRelativeSeconds": 19.0192211,
+          "Mode": "Hardware: Independent Flip"
+        },
+        {
+          "CaptureRelativeSeconds": 19.6451183,
+          "Mode": "Composed: Flip"
+        },
+        {
+          "CaptureRelativeSeconds": 21.4615624,
+          "Mode": "Hardware: Independent Flip"
+        },
+        {
+          "CaptureRelativeSeconds": 22.4014314,
+          "Mode": "Composed: Flip"
+        }
+      ],
+      "SlowIntervals": [
+        {
+          "CaptureRelativeSeconds": 7.1135049,
+          "IntervalMs": 243.907
+        },
+        {
+          "CaptureRelativeSeconds": 7.1619401,
+          "IntervalMs": 44.26150000000001
+        },
+        {
+          "CaptureRelativeSeconds": 7.463011,
+          "IntervalMs": 43.667
+        },
+        {
+          "CaptureRelativeSeconds": 18.8538787,
+          "IntervalMs": 219.51330000000002
+        },
+        {
+          "CaptureRelativeSeconds": 18.927225,
+          "IntervalMs": 49.3975
+        },
+        {
+          "CaptureRelativeSeconds": 19.8926761,
+          "IntervalMs": 247.55780000000001
+        },
+        {
+          "CaptureRelativeSeconds": 19.9754835,
+          "IntervalMs": 82.8074
+        },
+        {
+          "CaptureRelativeSeconds": 20.0111019,
+          "IntervalMs": 35.6184
+        },
+        {
+          "CaptureRelativeSeconds": 20.046842,
+          "IntervalMs": 35.7401
+        },
+        {
+          "CaptureRelativeSeconds": 21.2524928,
+          "IntervalMs": 242.2101
+        },
+        {
+          "CaptureRelativeSeconds": 21.3162333,
+          "IntervalMs": 37.8831
+        },
+        {
+          "CaptureRelativeSeconds": 21.4171839,
+          "IntervalMs": 100.95060000000001
+        },
+        {
+          "CaptureRelativeSeconds": 21.4615624,
+          "IntervalMs": 44.3785
+        },
+        {
+          "CaptureRelativeSeconds": 22.6292675,
+          "IntervalMs": 227.83610000000002
+        },
+        {
+          "CaptureRelativeSeconds": 22.7058086,
+          "IntervalMs": 67.1686
+        },
+        {
+          "CaptureRelativeSeconds": 22.7418212,
+          "IntervalMs": 36.0126
+        },
+        {
+          "CaptureRelativeSeconds": 22.7803692,
+          "IntervalMs": 38.548
+        },
+        {
+          "CaptureRelativeSeconds": 22.8164784,
+          "IntervalMs": 36.1092
+        }
+      ],
+      "PresentMonExitCode": 0,
+      "EventLossReported": false,
+      "CaptureWarning": "Non-elevated process querying may not identify short-lived processes or processes on other accounts.",
+      "AnalysisWarnings": [
+        "Mixed presentation modes were recorded. Focus, window/display conditions or composition may have changed; the trace does not establish the cause. Review the capture before attributing timing changes to tuning.",
+        "PresentMon marked 2024 of 3820 known rows as Dropped (52.98%). These presents were not displayed; Dropped is not lost ETW data. PresentToPresent retains their intervals, so submission pacing can differ from visible smoothness."
+      ],
+      "PresentationDiagnostics": {
+        "Scope": "Selected stream rows after SkipFirstFrames, before metric validity and undisplayed-frame exclusions.",
+        "Rows": 3820,
+        "PresentModeColumnAvailable": true,
+        "KnownPresentModeRows": 3820,
+        "UnknownPresentModeRows": 0,
+        "ModeCounts": [
+          {
+            "Mode": "Composed: Flip",
+            "Rows": 3071,
+            "PercentOfKnownRows": 80.39267015706807
+          },
+          {
+            "Mode": "Hardware: Independent Flip",
+            "Rows": 749,
+            "PercentOfKnownRows": 19.607329842931936
+          }
+        ],
+        "MixedPresentModes": true,
+        "DroppedColumnAvailable": true,
+        "KnownDroppedRows": 3820,
+        "UnknownDroppedRows": 0,
+        "DroppedRows": 2024,
+        "DroppedPercentOfKnownRows": 52.98429319371728
+      }
+    }
+  ],
+  "Changes": {
+    "MeanMs": {
+      "Baseline": 10.898780324691097,
+      "Candidate": 11.76886096858641,
+      "Difference": 0.8700806438953119,
+      "ChangePercent": 7.983284532528391
+    },
+    "P50Ms": {
+      "Baseline": 10.8905,
+      "Candidate": 11.1614,
+      "Difference": 0.27090000000000103,
+      "ChangePercent": 2.4874890960011116
+    },
+    "P95Ms": {
+      "Baseline": 11.6287,
+      "Candidate": 12.529,
+      "Difference": 0.9002999999999997,
+      "ChangePercent": 7.742051992054139
+    },
+    "P99Ms": {
+      "Baseline": 12.0577,
+      "Candidate": 22.2338,
+      "Difference": 10.176099999999998,
+      "ChangePercent": 84.39503387876624
+    },
+    "P999Ms": {
+      "Baseline": 12.9058,
+      "Candidate": 227.83610000000002,
+      "Difference": 214.93030000000002,
+      "ChangePercent": 1665.3775821723568
+    },
+    "MaximumMs": {
+      "Baseline": 13.6561,
+      "Candidate": 247.55780000000001,
+      "Difference": 233.9017,
+      "ChangePercent": 1712.8001405965101
+    },
+    "SlowFramePercent": {
+      "Baseline": 0.0,
+      "Candidate": 0.4712041884816754,
+      "Difference": 0.4712041884816754,
+      "ChangePercent": null
+    }
+  },
+  "Restoration": {
+    "PriorityBefore": "Normal",
+    "PriorityActive": "AboveNormal",
+    "PriorityAtCaptureEnd": "AboveNormal",
+    "PriorityAfter": "Normal",
+    "PowerThrottlingMasksBefore": [
+      0,
+      0
+    ],
+    "PowerThrottlingMasksActive": [
+      1,
+      0
+    ],
+    "PowerThrottlingMasksAtCaptureEnd": [
+      1,
+      0
+    ],
+    "PowerThrottlingMasksAfter": [
+      0,
+      0
+    ],
+    "CpuSetSelectionChanged": false,
+    "SessionEndReason": "Duration",
+    "CleanupSucceeded": true,
+    "CleanupErrors": [],
+    "IndependentAfterReadConfirmed": true
+  },
+  "Conclusion": "Default-session application and restoration succeeded. Tuned descriptive timings were worse. Different presentation modes, dropped-frame counts, camera conditions and uncontrolled focus invalidate causal performance comparison. No efficacy claim is supported.",
+  "ComparisonWarnings": [
+    "Candidate: Mixed presentation modes were recorded. Focus, window/display conditions or composition may have changed; the trace does not establish the cause. Review the capture before attributing timing changes to tuning.",
+    "Candidate: PresentMon marked 2024 of 3820 known rows as Dropped (52.98%). These presents were not displayed; Dropped is not lost ETW data. PresentToPresent retains their intervals, so submission pacing can differ from visible smoothness.",
+    "Presentation-mode distributions differ between captures. Verify the same focus, window/display conditions and scene before attributing timing differences to tuning; no intervals were automatically removed.",
+    "At least one capture contains dropped presents. Compare the dropped counts and presentation conditions before interpreting performance differences. These flags do not indicate lost ETW events, and they do not establish the cause of a timing change."
+  ]
+}

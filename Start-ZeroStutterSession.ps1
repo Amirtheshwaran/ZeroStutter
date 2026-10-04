@@ -15,6 +15,9 @@ param(
     [switch]$UnparkCores,
     [switch]$Headless,
     [ValidateRange(0, 86400)][int]$Seconds = 0,
+    [ValidateNotNullOrEmpty()][string]$StopSignalPath,
+    [ValidateRange(0, 2147483647)][int]$OwnerProcessId = 0,
+    [ValidateRange(0, 9223372036854775807)][long]$OwnerCreationFileTime = 0,
     [string]$StateDirectory = (Join-Path $env:LOCALAPPDATA 'ZeroStutter\State'),
     [string]$ReportPath
 )
@@ -28,8 +31,18 @@ if ($ReportPath) {
     if (Test-Path -LiteralPath $ReportPath) { throw "Report already exists: $ReportPath" }
     if (-not (Test-Path -LiteralPath (Split-Path -Parent $ReportPath) -PathType Container)) { throw 'Report parent directory does not exist.' }
 }
+if ($StopSignalPath) {
+    $StopSignalPath = [IO.Path]::GetFullPath($StopSignalPath)
+    if (Test-Path -LiteralPath $StopSignalPath) { throw "Stop signal already exists: $StopSignalPath" }
+    if (-not (Test-Path -LiteralPath (Split-Path -Parent $StopSignalPath) -PathType Container)) { throw 'Stop signal parent directory does not exist.' }
+}
+$trackLifecycleOwner = $PSBoundParameters.ContainsKey('OwnerProcessId') -or $PSBoundParameters.ContainsKey('OwnerCreationFileTime')
+if ($trackLifecycleOwner -and (-not $PSBoundParameters.ContainsKey('OwnerProcessId') -or -not $PSBoundParameters.ContainsKey('OwnerCreationFileTime') -or $OwnerProcessId -le 0 -or $OwnerCreationFileTime -le 0)) {
+    throw 'Provide both -OwnerProcessId and -OwnerCreationFileTime with positive values.'
+}
 
 $targetProcess = $null
+$lifecycleOwner = $null
 $tuningState = $null
 $powerState = $null
 $managed = @{}
@@ -46,6 +59,17 @@ $sessionId = [guid]::NewGuid().ToString('N')
 $readyPath = Join-Path $StateDirectory ($sessionId + '.ready')
 $report = [ordered]@{ Version = 1; StartedUtc = $started.ToString('o'); ProcessId = 0; ProcessName = ''; RequestedPriority = $Priority; CpuPolicy = $CpuPolicy; HighQoS = (-not $DisableHighQoS); UnparkCores = [bool]$UnparkCores }
 try {
+    if ($trackLifecycleOwner) {
+        if ($OwnerProcessId -eq $PID -or $OwnerProcessId -eq 4) { throw 'The session owner must be another application in this desktop session.' }
+        $lifecycleOwner = Get-Process -Id $OwnerProcessId -ErrorAction Stop
+        # Retain the original process handle, so a reused PID cannot keep a session alive.
+        $null = $lifecycleOwner.Handle
+        $currentProcess = [Diagnostics.Process]::GetCurrentProcess()
+        try { $desktopSessionId = $currentProcess.SessionId } finally { $currentProcess.Dispose() }
+        if ($lifecycleOwner.HasExited -or $lifecycleOwner.SessionId -eq 0 -or $lifecycleOwner.SessionId -ne $desktopSessionId -or $lifecycleOwner.StartTime.ToUniversalTime().ToFileTimeUtc() -ne $OwnerCreationFileTime) {
+            throw 'The session owner identity is invalid or is outside this desktop session.'
+        }
+    }
     try { $lockHeld = $lock.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $lockHeld = $true }
     if (-not $lockHeld) { throw 'A ZeroStutter game session is already running in this Windows session. Stop it before starting another.' }
     if (Test-Path -LiteralPath $journalPath) {
@@ -103,40 +127,52 @@ try {
         Start-Sleep -Milliseconds 100
     }
     Remove-Item -LiteralPath $readyPath -Force
-    $null = Enable-ZeroStutterProcessTuning -State $tuningState
-    $profile = [pscustomobject]@{ name = $targetProcess.ProcessName; executable = ($targetProcess.ProcessName + '.exe'); category = 'Session'; priorityClass = $Priority }
-    $target = @(Get-ZeroStutterTargetProcesses -Profiles @($profile) -Processes @($targetProcess))
-    $expectedPriorities = @{}
-    $expectedPriorities[('{0}:{1}' -f $targetProcess.Id, $creationTime.Ticks)] = $originalPriority
-    $priorityActions = @(Set-ZeroStutterProfilePriorities -Targets $target -ManagedProcesses $managed -ExpectedPriorities $expectedPriorities)
-    if ($target[0].Status -eq 'Changed during setup') { throw 'Priority changed outside ZeroStutter during setup. Session cancelled; that priority was preserved.' }
-    if ($target[0].Status -eq 'Skipped (exit/access)') { throw 'Could not apply the requested priority. The game exited or denied access.' }
-    $report.PriorityStatus = $target[0].Status
-    $report.NativeStatus = [string]$tuningState.Status
-    if ($UnparkCores) {
-        Import-Module (Join-Path $PSScriptRoot 'src\ZeroStutter.Power.psm1') -Force
-        $powerState = Start-ZeroStutterPowerSession -StateDirectory $StateDirectory
-        $report.OriginalPowerScheme = $powerState.OriginalScheme
-        $report.SessionPowerScheme = $powerState.CloneScheme
+    if ($null -ne $lifecycleOwner) {
+        $lifecycleOwner.Refresh()
+        if ($lifecycleOwner.HasExited -or $lifecycleOwner.StartTime.ToUniversalTime().ToFileTimeUtc() -ne $OwnerCreationFileTime) { $report.EndReason = 'OwnerExited' }
     }
-    $activeStarted = [DateTime]::UtcNow
-
-    Write-Host ("ZeroStutter session: {0} (PID {1})" -f $report.ProcessName, $report.ProcessId) -ForegroundColor Cyan
-    Write-Host ("Priority: {0} | CPU policy: {1} | HighQoS: {2} | Unpark AC: {3}" -f $report.PriorityStatus, $CpuPolicy, (-not $DisableHighQoS), [bool]$UnparkCores)
-    Write-Host 'Measure the same game scene before/after with Measure-ZeroStutter.ps1.'
-    if (-not $Headless) { Write-Host 'Q: end session and restore | The session also ends when this game process exits.' }
-    $samples = @{}
-    while ($true) {
-        $targetProcess.Refresh()
-        if ($targetProcess.HasExited) { $report.EndReason = 'TargetExited'; break }
-        if ($targetProcess.StartTime.ToUniversalTime() -ne $creationTime) { throw 'The target process identity changed.' }
-        if ($Seconds -gt 0 -and ([DateTime]::UtcNow - $activeStarted).TotalSeconds -ge $Seconds) { $report.EndReason = 'Duration'; break }
-        if (-not $Headless) {
-            if ([Console]::KeyAvailable -and [Console]::ReadKey($true).Key -eq [ConsoleKey]::Q) { $report.EndReason = 'User'; break }
-            Update-ZeroStutterTargetUsage -Targets $target -CpuSamples $samples
-            Write-Host ("`rCPU {0,6}% | RAM {1,8} MB | Priority {2,-12} | elapsed {3,5:N0}s    " -f $target[0].CpuPercent, $target[0].WorkingSetMB, $targetProcess.PriorityClass, ([DateTime]::UtcNow - $started).TotalSeconds) -NoNewline
+    if ($StopSignalPath -and [IO.File]::Exists($StopSignalPath)) { $report.EndReason = 'StopRequested' }
+    if (-not $report.Contains('EndReason')) {
+        $null = Enable-ZeroStutterProcessTuning -State $tuningState
+        $profile = [pscustomobject]@{ name = $targetProcess.ProcessName; executable = ($targetProcess.ProcessName + '.exe'); category = 'Session'; priorityClass = $Priority }
+        $target = @(Get-ZeroStutterTargetProcesses -Profiles @($profile) -Processes @($targetProcess))
+        $expectedPriorities = @{}
+        $expectedPriorities[('{0}:{1}' -f $targetProcess.Id, $creationTime.Ticks)] = $originalPriority
+        $priorityActions = @(Set-ZeroStutterProfilePriorities -Targets $target -ManagedProcesses $managed -ExpectedPriorities $expectedPriorities)
+        if ($target[0].Status -eq 'Changed during setup') { throw 'Priority changed outside ZeroStutter during setup. Session cancelled; that priority was preserved.' }
+        if ($target[0].Status -eq 'Skipped (exit/access)') { throw 'Could not apply the requested priority. The game exited or denied access.' }
+        $report.PriorityStatus = $target[0].Status
+        $report.NativeStatus = [string]$tuningState.Status
+        if ($UnparkCores) {
+            Import-Module (Join-Path $PSScriptRoot 'src\ZeroStutter.Power.psm1') -Force
+            $powerState = Start-ZeroStutterPowerSession -StateDirectory $StateDirectory
+            $report.OriginalPowerScheme = $powerState.OriginalScheme
+            $report.SessionPowerScheme = $powerState.CloneScheme
         }
-        Start-Sleep -Milliseconds 500
+        $activeStarted = [DateTime]::UtcNow
+
+        Write-Host ("ZeroStutter session: {0} (PID {1})" -f $report.ProcessName, $report.ProcessId) -ForegroundColor Cyan
+        Write-Host ("Priority: {0} | CPU policy: {1} | HighQoS: {2} | Unpark AC: {3}" -f $report.PriorityStatus, $CpuPolicy, (-not $DisableHighQoS), [bool]$UnparkCores)
+        Write-Host 'Measure the same game scene before/after with Measure-ZeroStutter.ps1.'
+        if (-not $Headless) { Write-Host 'Q: end session and restore | The session also ends when this game process exits.' }
+        $samples = @{}
+        while ($true) {
+            if ($null -ne $lifecycleOwner) {
+                $lifecycleOwner.Refresh()
+                if ($lifecycleOwner.HasExited -or $lifecycleOwner.StartTime.ToUniversalTime().ToFileTimeUtc() -ne $OwnerCreationFileTime) { $report.EndReason = 'OwnerExited'; break }
+            }
+            if ($StopSignalPath -and [IO.File]::Exists($StopSignalPath)) { $report.EndReason = 'StopRequested'; break }
+            $targetProcess.Refresh()
+            if ($targetProcess.HasExited) { $report.EndReason = 'TargetExited'; break }
+            if ($targetProcess.StartTime.ToUniversalTime() -ne $creationTime) { throw 'The target process identity changed.' }
+            if ($Seconds -gt 0 -and ([DateTime]::UtcNow - $activeStarted).TotalSeconds -ge $Seconds) { $report.EndReason = 'Duration'; break }
+            if (-not $Headless) {
+                if ([Console]::KeyAvailable -and [Console]::ReadKey($true).Key -eq [ConsoleKey]::Q) { $report.EndReason = 'User'; break }
+                Update-ZeroStutterTargetUsage -Targets $target -CpuSamples $samples
+                Write-Host ("`rCPU {0,6}% | RAM {1,8} MB | Priority {2,-12} | elapsed {3,5:N0}s    " -f $target[0].CpuPercent, $target[0].WorkingSetMB, $targetProcess.PriorityClass, ([DateTime]::UtcNow - $started).TotalSeconds) -NoNewline
+            }
+            Start-Sleep -Milliseconds 500
+        }
     }
 } catch {
     $sessionError = $_
@@ -170,6 +206,7 @@ try {
         } catch { $cleanupFailed = $true; $stopResults += $_.Exception.Message; if ($null -eq $sessionError) { $sessionError = $_ } }
     }
     if ($null -ne $targetProcess) { try { $targetProcess.Dispose() } catch { Write-Warning $_.Exception.Message } }
+    if ($null -ne $lifecycleOwner) { try { $lifecycleOwner.Dispose() } catch { Write-Warning $_.Exception.Message } }
     if ($journalCreated -and -not $cleanupFailed) {
         try { Remove-Item -LiteralPath $journalPath -Force -ErrorAction Stop }
         catch { $stopResults += "Could not remove recovery journal: $($_.Exception.Message)" }
